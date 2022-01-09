@@ -2,6 +2,8 @@ library(raster)
 library(terra)
 library(tidyverse)
 library(sf)
+library(unmarked)
+library(formula.tools)
 
 Puntos_Hull <- read_csv("https://raw.github.com/derek-corcoran-barrios/LayerCreationBuffer/main/Coords.csv") %>% 
   mutate(geometry = str_remove_all(str_remove_all(str_remove_all(geometry, "c"), "\\("), "\\)")) 
@@ -31,20 +33,11 @@ data_reg_Inv <- read_rds("Occdata_regInv.rds") %>%
   dplyr::select(matches("Pelecanus_thagus|Larus_dominicanus|Coragyps_atratus|Larosterna_inca|Columba_livia|Sephanoides_sephaniodes"))
 
 
-data_reg_Prim <- read_rds("Occdata_regPRIM.rds") %>% 
-  dplyr::select(matches("Leucophaeus_pipixcan|Larus_dominicanus|Columba_livia|Larosterna_inca|Phalacrocorax_bougainvillii"))
-
 Species_Names <- unique(gsub('[0-9]+', '', colnames(data_reg_Inv)))
 
 N_Species <- length(Species_Names)
 
 data_det_Inv <-read_rds("Occdata_detInv.rds")
-
-data_ocu <-read_rds("Occdata_occu.rds")
-data_ocu <- data_ocu %>% select(-Sitio)
-colnames(data_ocu) <- str_replace_all(colnames(data_ocu), pattern = " ", "_")
-
-data_ocu2 <- data_ocu %>% mutate_if(is.numeric, scale) #centro y escalamiento de variables-media 0, varianza1
 
 batchoccu2 <- function(pres, sitecov, obscov, spp, form, SppNames = NULL, dredge = FALSE) {
   if(is.null(SppNames)){
@@ -199,17 +192,101 @@ batchoccu2 <- function(pres, sitecov, obscov, spp, form, SppNames = NULL, dredge
 
 ######## Con solo algunas variables
 
-# BUFFER 30 M DE LOS SITIOS DE MUESTREO
-OccuInv37_30 <- batchoccu2(pres = data_reg, sitecov = data_ocu, obscov = OccuVars[[i]], 
-                           spp=N_Species, 
-                           form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ pastizales + matorrales+ sup_impermeables + oceano + suelo_arenoso + Buffer_30_Rocas + grava", 
-                           dredge=TRUE,  
-                           SppNames = Species_Names)
 
-OccuInv37_600 <- batchoccu2(pres = data_reg, 
-                            sitecov = data_ocu, 
-                            obscov = data_det, 
-                            spp=N_Species , 
-                            form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + pastizales + matorrales+ Buffer_600_Humedales + Buffer_600_Sup_impermeables+ Buffer_600_Oceano+ Buffer_600_Suelo_arenoso+Buffer_600_Rocas+ Buffer_600_Grava", 
-                            dredge=TRUE,  
-                            SppNames = Species_Names)
+Results_Inv <- list()
+
+for(i in 1:length(Distancias)){
+  print(paste("Starting distance", Distancias[i], Sys.time()))
+  Results_Inv[[i]] <- batchoccu2(pres = data_reg_Inv, sitecov = OccuVars[[i]], obscov = data_det_Inv, 
+                             spp=N_Species, 
+                             form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + cultivos + grava + oceano + pastizales + matorrales + sup_impermeables + suelo_arenoso + plantacion_de_arboles", 
+                             dredge=TRUE,  
+                             SppNames = Species_Names)
+}
+
+
+Table_Inv <- list()
+Template <- data.frame(Species = NA, Distance = NA, Model = NA, AICc = NA)
+
+for(i in 1:length(Results_Inv)){
+  TempDistance <- list()
+  for(j in 1:length(Results_Inv[[i]]$models)){
+    Temp <- Template
+    Temp$Species <- (names(Results_Inv[[i]]$models))[j] 
+    Temp$Distance <- Distancias[i]
+    Temp$Model <- Results_Inv[[i]]$models[[j]]@formula %>% as.character()
+    Temp$AICc <- Results_Inv[[i]]$models[[j]] %>% MuMIn::AICc()
+    TempDistance[[j]] <- Temp
+  }
+  Table_Inv[[i]] <- TempDistance %>% purrr::reduce(bind_rows)
+}
+
+Table_Inv <- Table_Inv %>% 
+  purrr::reduce(bind_rows) %>% 
+  group_split(Species) %>% 
+  purrr::map(~mutate(.x, delta_AICc = AICc - min(AICc))) %>% 
+  purrr::map(~arrange(.x, delta_AICc)) %>% 
+  purrr::map(~dplyr::filter(.x, delta_AICc <= 2)) %>% 
+  purrr::map(~dplyr::filter(.x, Distance == min(Distance))) %>% 
+  purrr::reduce(bind_rows) %>% 
+  dplyr::select("Species", "Distance", "AICc", "delta_AICc")
+
+
+### Primavera
+
+data_reg_Prim <- read_rds("Occdata_regPRIM.rds") %>% 
+  dplyr::select(matches("Leucophaeus_pipixcan|Larus_dominicanus|Columba_livia|Larosterna_inca|Phalacrocorax_bougainvillii"))
+
+Species_Names <- unique(gsub('[0-9]+', '', colnames(data_reg_Prim)))
+
+N_Species <- length(Species_Names)
+
+data_det_Prim <-read_rds("Occdata_detPrim.rds")
+
+Results_Prim <- list()
+
+for(i in 1:length(Distancias)){
+  print(paste("Starting distance", Distancias[i], Sys.time()))
+  Results_Prim[[i]] <- batchoccu2(pres = data_reg_Prim, sitecov = OccuVars[[i]], obscov = data_det_Prim, 
+                                 spp=N_Species, 
+                                 form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + cultivos + grava + oceano + pastizales + matorrales + sup_impermeables + suelo_arenoso + plantacion_de_arboles", 
+                                 dredge=TRUE,  
+                                 SppNames = Species_Names)
+}
+
+
+Table_Prim <- list()
+Template <- data.frame(Species = NA, Distance = NA, Model = NA, AICc = NA)
+
+for(i in 1:length(Results_Prim)){
+  TempDistance <- list()
+  for(j in 1:length(Results_Prim[[i]]$models)){
+    Temp <- Template
+    Temp$Species <- (names(Results_Prim[[i]]$models))[j] 
+    Temp$Distance <- Distancias[i]
+    Temp$Model <- Results_Prim[[i]]$models[[j]]@formula %>% as.character()
+    Temp$AICc <- Results_Prim[[i]]$models[[j]] %>% MuMIn::AICc()
+    TempDistance[[j]] <- Temp
+  }
+  Table_Prim[[i]] <- TempDistance %>% purrr::reduce(bind_rows)
+}
+
+Table_Prim <- Table_Prim %>% 
+  purrr::reduce(bind_rows) %>% 
+  group_split(Species) %>% 
+  purrr::map(~mutate(.x, delta_AICc = AICc - min(AICc))) %>% 
+  purrr::map(~arrange(.x, delta_AICc)) %>% 
+  purrr::map(~dplyr::filter(.x, delta_AICc <= 2)) %>% 
+  purrr::map(~dplyr::filter(.x, Distance == min(Distance))) %>% 
+  purrr::reduce(bind_rows) %>% 
+  dplyr::select("Species", "Distance", "AICc", "delta_AICc")
+
+
+### Final models and projections
+
+# Have to add distance to river and Height
+
+DistanciaRio <- readRDS("DistanceToRiver.RDS") %>% 
+  raster::projectRaster(crs = "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs")
+Altura <- readRDS("Alt.rds") %>% 
+  raster::projectRaster(crs = "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs")
