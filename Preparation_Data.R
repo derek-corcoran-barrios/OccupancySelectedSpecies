@@ -38,7 +38,7 @@ Species_Names <- unique(gsub('[0-9]+', '', colnames(data_reg_Inv)))
 
 N_Species <- length(Species_Names)
 
-data_det <-read_rds("Occdata_detInv.rds")
+data_det_Inv <-read_rds("Occdata_detInv.rds")
 
 data_ocu <-read_rds("Occdata_occu.rds")
 data_ocu <- data_ocu %>% select(-Sitio)

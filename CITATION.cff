@@ -1,12 +1,12 @@
 cff-version: 1.2.0
-message: "If you use this software, please cite it as below."
+message: "If you use this dataset, please cite it as below."
 authors:
-  - family-names: Corcoran
-    given-names: Derek
-    orcid: https://orcid.org/0000-0002-0248-6230
   - family-names: Graells
     given-names: Giorgia
     orcid: https://orcid.org/0000-0003-2088-6825
+  - family-names: Corcoran
+    given-names: Derek
+    orcid: https://orcid.org/0000-0002-0248-6230
 title: "Occupancy models for selected species"
 version: 0.0.1
 date-released: 2022-01-09
