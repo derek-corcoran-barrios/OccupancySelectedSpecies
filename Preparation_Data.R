@@ -20,12 +20,24 @@ Puntos_Hull <- Puntos_Hull %>%
 Distancias <- round(seq(from = 30, to = 5000, length.out = 10), -2)
 Distancias[1] <- 30
 
+DistanciaRio <- readRDS("DistanceToRiver.RDS") %>% 
+  raster::projectRaster(crs = "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs") %>% 
+  terra::rast()
+Altura <- readRDS("Alt.rds") %>% 
+  raster::projectRaster(crs = "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs") %>% 
+  terra::rast()
+
+
 Layers <- list()
 OccuVars <- list()
 
 for(i in 1:length(Distancias)){
-  Layers[[i]] <- terra::rast(paste0("/vsicurl/https://raw.github.com/derek-corcoran-barrios/LayerCreationBuffer/main/Proportions_", Distancias[i],".tif"))
+  Layers[[i]] <- terra::rast(paste0("/vsicurl/https://raw.github.com/derek-corcoran-barrios/LayerCreationBuffer/main/Proportions_", Distancias[i],".tif")) %>% 
+    terra::resample(Altura)
+  Layers[[i]] <- c(Layers[[i]], Altura, DistanciaRio)
+  names(Layers[[i]])[c(10,11)] <- c("altura", "distancia_rio")
   OccuVars[[i]] <- terra::extract(Layers[[i]], Puntos_Hull)
+  names(Layers[[i]])[c(10,11)]
 }
 
 
@@ -199,7 +211,7 @@ for(i in 1:length(Distancias)){
   print(paste("Starting distance", Distancias[i], Sys.time()))
   Results_Inv[[i]] <- batchoccu2(pres = data_reg_Inv, sitecov = OccuVars[[i]], obscov = data_det_Inv, 
                              spp=N_Species, 
-                             form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + cultivos + grava + oceano + pastizales + matorrales + sup_impermeables + suelo_arenoso + plantacion_de_arboles", 
+                             form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + cultivos + grava + oceano + pastizales + matorrales + sup_impermeables + suelo_arenoso + plantacion_de_arboles + altura + distancia_rio", 
                              dredge=TRUE,  
                              SppNames = Species_Names)
 }
@@ -228,10 +240,41 @@ Table_Inv <- Table_Inv %>%
   purrr::map(~arrange(.x, delta_AICc)) %>% 
   purrr::map(~dplyr::filter(.x, delta_AICc <= 2)) %>% 
   purrr::map(~dplyr::filter(.x, Distance == min(Distance))) %>% 
-  purrr::reduce(bind_rows) %>% 
-  dplyr::select("Species", "Distance", "AICc", "delta_AICc")
+  purrr::reduce(bind_rows) 
 
+## PRedicciones invierno
 
+dir.create("Results_Winter")
+dir.create("Results_Winter/Tables")
+dir.create("Results_Winter/Plots")
+dir.create("Results_Winter/Rasters")
+
+write_csv(Table_Inv, "Results_Winter/Tables/Table_Models_inv.csv")
+
+Stack_Species_Inv <- list()
+
+for(i in 1:nrow(Table_Inv)){
+  Cond <- (Distancias == Table_Inv$Distance[i])
+  Index <- (1:length(Distancias))[Cond]
+  Stack_Species_Inv[[i]] <- predict(Results_Inv[[Index]]$models[[i]] ,raster::stack(Layers[[Index]]), type = "state")[[1]]
+  raster::writeRaster(Stack_Species_Inv[[i]], paste0("Results_Winter/Rasters/",Table_Inv$Species[i],".tif"))
+  message(paste(i, "of",nrow(Table_Inv), Sys.time()))
+}
+
+MaskRaster <- raster(Altura)
+MaskRaster[!is.na(MaskRaster)] <- 1
+
+for(i in 1:length(Stack_Species_Inv)){
+  Stack_Species_Inv[[i]] <- Stack_Species_Inv[[i]]*MaskRaster
+}
+
+Stack_Species_Inv <- Stack_Species_Inv %>% purrr::reduce(stack)
+
+names(Stack_Species_Inv) <- Table_Inv$Species
+
+png("Results_Winter/Plots/Species.png",res = 300, width = 2000, height = 2000)
+plot(Stack_Species_Inv, colNA = "black")
+dev.off()
 ### Primavera
 
 data_reg_Prim <- read_rds("Occdata_regPRIM.rds") %>% 
@@ -249,7 +292,7 @@ for(i in 1:length(Distancias)){
   print(paste("Starting distance", Distancias[i], Sys.time()))
   Results_Prim[[i]] <- batchoccu2(pres = data_reg_Prim, sitecov = OccuVars[[i]], obscov = data_det_Prim, 
                                  spp=N_Species, 
-                                 form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + cultivos + grava + oceano + pastizales + matorrales + sup_impermeables + suelo_arenoso + plantacion_de_arboles", 
+                                 form= "~ Temperatura + Humedad + DirViento + RapViento + Agua ~ bosque_nativo + cultivos + grava + oceano + pastizales + matorrales + sup_impermeables + suelo_arenoso + plantacion_de_arboles + altura + distancia_rio", 
                                  dredge=TRUE,  
                                  SppNames = Species_Names)
 }
@@ -278,15 +321,37 @@ Table_Prim <- Table_Prim %>%
   purrr::map(~arrange(.x, delta_AICc)) %>% 
   purrr::map(~dplyr::filter(.x, delta_AICc <= 2)) %>% 
   purrr::map(~dplyr::filter(.x, Distance == min(Distance))) %>% 
-  purrr::reduce(bind_rows) %>% 
-  dplyr::select("Species", "Distance", "AICc", "delta_AICc")
+  purrr::reduce(bind_rows)
 
 
 ### Final models and projections
+## PRedicciones Primavera
 
-# Have to add distance to river and Height
+dir.create("Results_Spring")
+dir.create("Results_Spring/Tables")
+dir.create("Results_Spring/Plots")
+dir.create("Results_Spring/Rasters")
 
-DistanciaRio <- readRDS("DistanceToRiver.RDS") %>% 
-  raster::projectRaster(crs = "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs")
-Altura <- readRDS("Alt.rds") %>% 
-  raster::projectRaster(crs = "+proj=utm +zone=19 +south +datum=WGS84 +units=m +no_defs")
+write_csv(Table_Prim, "Results_Spring/Tables/Table_Models_prim.csv")
+
+Stack_Species_Prim <- list()
+
+for(i in 1:nrow(Table_Prim)){
+  Cond <- (Distancias == Table_Prim$Distance[i])
+  Index <- (1:length(Distancias))[Cond]
+  Stack_Species_Prim[[i]] <- predict(Results_Prim[[Index]]$models[[i]] ,raster::stack(Layers[[Index]]), type = "state")[[1]]
+  raster::writeRaster(Stack_Species_Prim[[i]], paste0("Results_Spring/Rasters/",Table_Prim$Species[i],".tif"))
+  message(paste(i, "of",nrow(Table_Prim), Sys.time()))
+}
+
+for(i in 1:length(Stack_Species_Prim)){
+  Stack_Species_Prim[[i]] <- Stack_Species_Prim[[i]]*MaskRaster
+}
+
+Stack_Species_Prim <- Stack_Species_Prim %>% purrr::reduce(stack)
+
+names(Stack_Species_Prim) <- Table_Prim$Species
+
+png("Results_Spring/Plots/Species.png",res = 300, width = 2000, height = 2000)
+plot(Stack_Species_Prim, colNA = "black")
+dev.off()

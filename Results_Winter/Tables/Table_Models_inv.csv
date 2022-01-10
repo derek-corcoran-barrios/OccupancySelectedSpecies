@@ -1,0 +1,7 @@
+Species,Distance,Model,AICc,delta_AICc
+Columba_livia,30,~Temperatura ~ grava + oceano + pastizales + suelo_arenoso,116.4951230493814,1.157830640773966
+Coragyps_atratus,1100,~1 ~ bosque_nativo + cultivos + grava + matorrales + plantacion_de_arboles,43.23958159838443,0
+Larosterna_inca,30,~Agua ~ grava + oceano + suelo_arenoso + plantacion_de_arboles + altura,50.23483818076123,0
+Larus_dominicanus,30,~Temperatura ~ 1,6.75,0
+Pelecanus_thagus,4400,~DirViento ~ bosque_nativo + grava + matorrales + suelo_arenoso + plantacion_de_arboles,108.80590098317545,0
+Sephanoides_sephaniodes,600,~Humedad ~ pastizales + altura,131.59516476905458,1.998391881812779
